@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <style>
+    body {
+      width: 300px;
+      height: auto;
+      margin: 0;
+      padding: 16px;
+      background-color: #000000;
+      color: #FFFFFF;
+      font-family: 'VT323', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+
+    .stats {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 16px;
+      margin-top: 5px;
+    }
+
+    .count {
+      color: #FF4545;
+      margin-left: 5px;
+    }
+
+    .cost {
+      font-size: 24px;
+      color: #FF4545;
+      margin-top: 5px;
+    }
+
+    .token-display {
+      text-align: center;
+      width: 100%;
+      margin-bottom: 5px;
+    }
+
+    .token-count {
+      font-size: 28px;
+      letter-spacing: 2px;
+      margin: 5px 0;
+    }
+
+    .label {
+      font-size: 16px;
+      opacity: 0.7;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .divider {
+      width: 80%;
+      height: 1px;
+      background-color: #FF4545;
+      opacity: 0.3;
+      margin: 5px 0;
+    }
+
+    #resetButton {
+      background: transparent;
+      color: #FF4545;
+      border: 2px solid #FF4545;
+      padding: 8px 24px;
+      font-family: 'VT323', monospace;
+      font-size: 18px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 10px;
+    }
+
+    #resetButton:hover {
+      background-color: #FF4545;
+      color: #000000;
+    }
+
+    .highlight {
+      color: #FF4545;
+    }
+  </style>
+</head>
+<body>
+  <div class="token-display">
+    <div class="label">Input</div>
+    <div class="stats">
+      <div>Characters: <span id="inputChars" class="count">0</span></div>
+      <div>Tokens: <span id="inputTokens" class="count">0</span></div>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="token-display">
+    <div class="label">Output</div>
+    <div class="stats">
+      <div>Characters: <span id="outputChars" class="count">0</span></div>
+      <div>Tokens: <span id="outputTokens" class="count">0</span></div>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="token-display">
+    <div class="label">Estimated Cost</div>
+    <div id="costDisplay" class="cost highlight">$0.00</div>
+  </div>
+  <button id="resetButton">Reset</button>
+  <script src="popup.js"></script>
+</body>
+</html>

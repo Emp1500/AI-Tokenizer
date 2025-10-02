@@ -1,0 +1,20 @@
+{
+  "name": "ai-token-monitor",
+  "version": "1.0.0",
+  "description": "Live token counter and cost estimator for AI chat interfaces",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ai",
+    "tokens",
+    "chrome-extension",
+    "openai",
+    "claude",
+    "gemini",
+    "cost-calculator"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
