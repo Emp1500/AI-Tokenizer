@@ -1,99 +1,89 @@
 # AI Token Monitor
 
-A Chrome extension that provides real-time token counting and cost estimation for popular AI chat interfaces.
+A browser extension for real-time token counting and cost estimation for large language models.
 
-## Features
+## Overview
 
-- Real-time token counting for inputs and responses
-- Accurate cost estimation based on current API rates
-- Support for multiple AI platforms:
+This extension provides developers, writers, and researchers with a convenient way to monitor token usage and estimate costs when interacting with AI chat platforms. It runs in the background, automatically detecting supported platforms and providing live updates.
+
+## Key Features
+
+- **Live Token Counting**: Tracks input and output tokens in real-time.
+- **Cost Estimation**: Calculates estimated costs based on platform-specific pricing.
+- **Multi-Platform Support**: Works with:
   - OpenAI ChatGPT
   - Anthropic Claude
   - Google Gemini
-  - Google Bard
-- Live updates with animated counters
-- Platform-specific token calculations
-- Cost tracking for both input and output tokens
+- **Advanced Tokenization**: Uses platform-specific algorithms for improved accuracy.
+- **Session Management**: Tracks usage across multiple tabs and sessions.
+- **Customizable Settings**: Adjust pricing models and other preferences.
 
 ## Installation
 
-1. Clone this repository:
-```bash
-git clone https://github.com/yourusername/ai-token-monitor.git
-```
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Emp1500/ai-token-monitor.git
+   ```
 
-2. Open Google Chrome and navigate to `chrome://extensions/`
+2. **Load the extension in your browser**:
+   - **Chrome**: Go to `chrome://extensions`, enable "Developer mode", and click "Load unpacked".
+   - **Firefox**: Go to `about:debugging`, click "This Firefox", and select "Load Temporary Add-on".
 
-3. Enable "Developer mode" (toggle in the top right)
+3. **Select the cloned directory**.
 
-4. Click "Load unpacked" and select the extension directory
+## How to Use
 
-## Usage
+1. **Navigate** to a supported platform (e.g., `chat.openai.com`).
+2. **Click** the extension icon in your browser toolbar.
+3. **View** the live token counts and estimated cost in the popup.
+4. **Use** the reset button to clear the counters for the current session.
 
-1. Visit any supported AI chat platform:
-   - chat.openai.com
-   - claude.ai
-   - gemini.google.com
-   - bard.google.com
+## Recent Changes
 
-2. Click the extension icon to see:
-   - Input token count
-   - Output token count
-   - Character counts
-   - Estimated cost
+- Fixed several bugs in `popup.js` including duplicate event listeners and incorrect message types.
+- Consolidated event listeners for better performance.
+- Corrected the initial stats request to the background script.
+- Ensured the reset button correctly clears the display.
 
-3. Use the reset button to clear counters
+## Technical Details
 
-## Development
+### Token Calculation
 
-### Prerequisites
-- Google Chrome
-- Basic understanding of JavaScript and Chrome Extension development
+The extension uses a sophisticated tokenization strategy that adapts to the specific model being used:
 
-### Project Structure
+- **GPT (OpenAI)**: Implements a BPE-like algorithm that mimics `cl100k_base`.
+- **Claude (Anthropic)**: Uses a custom tokenizer tuned for Claude's models.
+- **Gemini (Google)**: Approximates Gemini's tokenization with a focus on multilingual support.
+
+### Performance
+
+- **Efficient**: Uses `MutationObserver` and debouncing to minimize performance impact.
+- **Caching**: Caches tokenization results to speed up repeated calculations.
+- **Lightweight**: Designed to be unobtrusive and consume minimal resources.
+
+### Configuration
+
+The extension's configuration is stored within the JavaScript files:
+
+- **`background.js`**: Contains the pricing information for the different AI models.
+- **`content.js`**: Contains the CSS selectors for the different AI platforms.
+
+## Project Structure
+
 ```
 ai-token-monitor/
-├── manifest.json        # Extension configuration
-├── background.js       # Background service worker
-├── content.js         # Content script for token monitoring
-├── popup.html        # Extension popup interface
-├── popup.js         # Popup functionality
-├── tokenizer.js    # Token calculation logic
-└── icons/         # Extension icons
+|-- manifest.json       # Extension manifest
+|-- background.js      # Main service worker for state management
+|-- content.js        # Injects into pages to monitor content
+|-- popup.html       # Popup UI
+|-- popup.js        # Popup logic
+|-- tokenizer.js   # Core tokenization engine
+|-- icons/          # Extension icons
+|-- docs/           # Documentation files
 ```
-
-### Local Development
-1. Make changes to the relevant files
-2. Reload the extension in Chrome
-3. Test on supported platforms
-
-## Token Calculation
-
-The extension uses platform-specific token calculation methods:
-- GPT-3.5/4: ~4 characters per token
-- Claude: ~3.5 characters per token
-- Gemini: ~4.5 characters per token
-
-Special handling for:
-- Unicode characters
-- Code blocks
-- Special characters
-- Common words
-- URLs and emails
 
 ## Contributing
 
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+Contributions are welcome! Please fork the repository and submit a pull request with your improvements.
 
-## License
 
-MIT License - feel free to use and modify for your needs.
-
-## Acknowledgments
-
-- Thanks to OpenAI, Anthropic, and Google for their API documentation
-- Icon design inspired by classic terminal interfaces
