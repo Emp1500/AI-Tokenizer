@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Request initial stats from background script
-  chrome.runtime.sendMessage({ type: 'get' }, response => {
+  chrome.runtime.sendMessage({ type: 'getStats' }, response => {
     if (response) {
       updateStats(response);
     }
@@ -93,15 +93,6 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({ type: 'reset' }, response => {
       if (response && response.success) {
         resetDisplays();
-      }
-    });
-  });
-
-  // Handle reset button click
-  resetButton.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'reset' }, response => {
-      if (response) {
-        updateDisplay(0);
       }
     });
   });

@@ -26,4 +26,5 @@ yarn-debug.log*
 yarn-error.log*
 
 # Backup files
-*.bak
+*.bak"README.md" 
+"*.bak" 
