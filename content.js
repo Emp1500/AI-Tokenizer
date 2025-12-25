@@ -1,589 +1,369 @@
-// Enhanced content.js with improved monitoring and performance
+// AI Token Monitor - Content Script
+// Live monitoring with model detection
 
-// Performance monitoring
-const performanceMetrics = {
-  tokenCalculations: 0,
-  avgCalculationTime: 0,
-  cacheHits: 0,
-  cacheMisses: 0
-};
+(function() {
+  'use strict';
 
-// Debounce utility with leading and trailing options
-function debounce(func, wait, options = {}) {
-  let timeout, lastArgs, lastThis, lastCallTime;
-  const { leading = false, trailing = true, maxWait } = options;
-  let lastInvokeTime = 0;
+  const DEBUG = true;
+  const log = (...args) => DEBUG && console.log('[AI Token Monitor]', ...args);
 
-  function invokeFunc(time) {
-    const args = lastArgs;
-    const thisArg = lastThis;
-    lastArgs = lastThis = undefined;
-    lastInvokeTime = time;
-    return func.apply(thisArg, args);
-  }
+  if (window.__aiTokenMonitorInit) return;
+  window.__aiTokenMonitorInit = true;
 
-  function leadingEdge(time) {
-    lastInvokeTime = time;
-    timeout = setTimeout(timerExpired, wait);
-    return leading ? invokeFunc(time) : undefined;
-  }
+  log('Loaded:', window.location.hostname);
 
-  function remainingWait(time) {
-    const timeSinceLastCall = time - lastCallTime;
-    const timeSinceLastInvoke = time - lastInvokeTime;
-    const result = wait - timeSinceLastCall;
-    return maxWait ? Math.min(result, maxWait - timeSinceLastInvoke) : result;
-  }
-
-  function shouldInvoke(time) {
-    const timeSinceLastCall = time - lastCallTime;
-    const timeSinceLastInvoke = time - lastInvokeTime;
-    return lastCallTime === undefined || timeSinceLastCall >= wait ||
-      timeSinceLastCall < 0 || (maxWait && timeSinceLastInvoke >= maxWait);
-  }
-
-  function timerExpired() {
-    const time = Date.now();
-    if (shouldInvoke(time)) {
-      return trailingEdge(time);
+  // ============ PLATFORM CONFIG ============
+  const PLATFORMS = {
+    'claude.ai': {
+      name: 'Claude',
+      input: ['div.ProseMirror', '[contenteditable="true"]', 'fieldset [contenteditable]'],
+      response: ['.font-claude-message', '[data-is-streaming]', '.prose'],
+      modelSelector: '[data-testid="model-selector"]', // Model picker
+      modelPatterns: ['claude-3.5-sonnet', 'claude-3.5-haiku', 'claude-3-opus', 'sonnet', 'haiku', 'opus']
+    },
+    'chatgpt.com': {
+      name: 'ChatGPT',
+      input: ['#prompt-textarea', 'textarea'],
+      response: ['[data-message-author-role="assistant"]', '.markdown.prose', '.agent-turn'],
+      modelSelector: '[data-testid="model-switcher"]',
+      modelPatterns: ['gpt-4o', 'gpt-4o-mini', 'o1-preview', 'o1-mini', 'gpt-4-turbo', 'gpt-4']
+    },
+    'chat.openai.com': {
+      name: 'ChatGPT',
+      input: ['#prompt-textarea', 'textarea'],
+      response: ['[data-message-author-role="assistant"]', '.markdown.prose'],
+      modelSelector: '[data-testid="model-switcher"]',
+      modelPatterns: ['gpt-4o', 'gpt-4o-mini', 'o1', 'gpt-4']
+    },
+    'gemini.google.com': {
+      name: 'Gemini',
+      input: ['.ql-editor', '[contenteditable="true"]', 'textarea'],
+      response: ['.model-response-text', '.response-content', 'model-response'],
+      modelSelector: '.model-selector',
+      modelPatterns: ['gemini-2.0', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro']
     }
-    timeout = setTimeout(timerExpired, remainingWait(time));
-  }
-
-  function trailingEdge(time) {
-    timeout = undefined;
-    if (trailing && lastArgs) {
-      return invokeFunc(time);
-    }
-    lastArgs = lastThis = undefined;
-  }
-
-  function debounced(...args) {
-    const time = Date.now();
-    lastArgs = args;
-    lastThis = this;
-    lastCallTime = time;
-
-    if (shouldInvoke(time)) {
-      if (timeout === undefined) {
-        return leadingEdge(time);
-      }
-      if (maxWait) {
-        timeout = setTimeout(timerExpired, wait);
-        return invokeFunc(time);
-      }
-    }
-    if (timeout === undefined) {
-      timeout = setTimeout(timerExpired, wait);
-    }
-  }
-
-  debounced.cancel = () => {
-    if (timeout !== undefined) {
-      clearTimeout(timeout);
-    }
-    lastInvokeTime = 0;
-    lastArgs = lastCallTime = lastThis = timeout = undefined;
   };
 
-  return debounced;
-}
-
-// Enhanced platform detection with fallbacks
-const PLATFORM_CONFIGS = {
-  'claude.ai': {
-    selectors: {
-      input: '[contenteditable="true"], .ProseMirror, textarea[placeholder*="Message"]',
-      response: '.prose, .assistant-message, [data-testid="message-content"]',
-      container: 'main, .main-container, #root',
-      typing: '.typing-indicator, .loading-indicator'
-    },
-    features: {
-      streamingResponse: true,
-      codeBlocks: true,
-      markdown: true
-    }
-  },
-  'chat.openai.com': {
-    selectors: {
-      input: '#prompt-textarea, textarea[data-id="root"], .text-input',
-      response: '.markdown, .message-content, [data-message-author-role="assistant"]',
-      container: 'main, .flex.flex-col',
-      typing: '.typing-indicator, .result-streaming'
-    },
-    features: {
-      streamingResponse: true,
-      codeBlocks: true,
-      markdown: true
-    }
-  },
-  'gemini.google.com': {
-    selectors: {
-      input: '.input-area textarea, [contenteditable="true"], rich-textarea',
-      response: '.model-response, .message-content, .response-text',
-      container: '.conversation-container, .chat-container, main',
-      typing: '.loading-indicator, .generating-indicator'
-    },
-    features: {
-      streamingResponse: true,
-      codeBlocks: true,
-      markdown: true
-    }
-  },
-  'bard.google.com': {
-    selectors: {
-      input: 'textarea, [contenteditable="true"], .input-field',
-      response: '.response-content, .model-response, .message-content',
-      container: '#conversation-area, .chat-area, main',
-      typing: '.loading, .thinking-indicator'
-    },
-    features: {
-      streamingResponse: true,
-      codeBlocks: true,
-      markdown: false
-    }
-  }
-};
-
-// Get current platform configuration
-function getPlatformConfig() {
-  const hostname = window.location.hostname;
-  return PLATFORM_CONFIGS[hostname] || {
-    selectors: {
-      input: 'textarea, [contenteditable="true"]',
-      response: '.message, .response',
-      container: 'body',
-      typing: '.loading, .typing'
-    },
-    features: {
-      streamingResponse: false,
-      codeBlocks: false,
-      markdown: false
-    }
+  const config = PLATFORMS[window.location.hostname] || {
+    name: 'Unknown',
+    input: ['textarea', '[contenteditable="true"]'],
+    response: ['[class*="message"]', '[class*="response"]'],
+    modelSelector: null,
+    modelPatterns: []
   };
-}
 
-// Text extraction with better handling of complex DOM
-function extractTextContent(element) {
-  if (!element) return '';
-  
-  let text = '';
-  const walker = document.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-    {
-      acceptNode: (node) => {
-        // Skip script and style elements
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          const tagName = node.tagName.toLowerCase();
-          if (tagName === 'script' || tagName === 'style' || tagName === 'noscript') {
-            return NodeFilter.FILTER_REJECT;
-          }
-          // Handle code blocks specially
-          if (tagName === 'code' || tagName === 'pre') {
-            return NodeFilter.FILTER_ACCEPT;
-          }
+  // ============ STATE ============
+  let lastInputHash = '';
+  let lastOutputHash = '';
+  let detectedModel = null;
+  let streamingPoll = null;
+
+  // ============ UTILITIES ============
+  function findAll(selectors) {
+    const elements = [];
+    for (const sel of selectors) {
+      try {
+        document.querySelectorAll(sel).forEach(el => elements.push(el));
+      } catch (e) {}
+    }
+    return elements;
+  }
+
+  function getText(element) {
+    if (!element) return '';
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll('script, style, svg, button').forEach(e => e.remove());
+    return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function hash(text) {
+    let h = 0;
+    for (let i = 0; i < text.length; i++) {
+      h = ((h << 5) - h) + text.charCodeAt(i);
+      h |= 0;
+    }
+    return h.toString(36) + ':' + text.length;
+  }
+
+  // ============ TOKEN COUNTING ============
+  // More accurate token estimation
+  function countTokens(text) {
+    if (!text || text.length === 0) return 0;
+
+    // Use global tokenizer if available
+    if (typeof window.calculateTokens === 'function') {
+      return window.calculateTokens(text, window.location.hostname);
+    }
+
+    // Accurate fallback estimation
+    // Based on OpenAI's cl100k_base: ~3.5-4 chars per token
+    let tokens = 0;
+
+    // Count words (most are 1-2 tokens)
+    const words = text.match(/\b\w+\b/g) || [];
+    tokens += words.reduce((sum, word) => {
+      if (word.length <= 4) return sum + 1;
+      if (word.length <= 8) return sum + 2;
+      return sum + Math.ceil(word.length / 4);
+    }, 0);
+
+    // Count punctuation and special chars (usually 1 token each)
+    const punctuation = text.match(/[^\w\s]/g) || [];
+    tokens += punctuation.length * 0.8;
+
+    // Count whitespace/newlines
+    const newlines = (text.match(/\n/g) || []).length;
+    tokens += newlines;
+
+    // Minimum floor
+    tokens = Math.max(tokens, Math.ceil(text.length / 5));
+
+    return Math.round(tokens);
+  }
+
+  // ============ MODEL DETECTION ============
+  function detectModel() {
+    // Try to find model from various UI elements
+    const searchTexts = [];
+
+    // Check for model selector elements
+    if (config.modelSelector) {
+      const selector = document.querySelector(config.modelSelector);
+      if (selector) {
+        searchTexts.push(getText(selector).toLowerCase());
+      }
+    }
+
+    // Check page title
+    searchTexts.push(document.title.toLowerCase());
+
+    // Check for model indicators in the page
+    const allText = searchTexts.join(' ');
+
+    // Match against known model patterns
+    for (const pattern of config.modelPatterns) {
+      if (allText.includes(pattern.toLowerCase())) {
+        if (pattern !== detectedModel) {
+          detectedModel = pattern;
+          log('Detected model:', detectedModel);
+
+          // Notify background
+          try {
+            chrome.runtime.sendMessage({
+              type: 'modelDetected',
+              model: detectedModel
+            }).catch(() => {});
+          } catch (e) {}
         }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    }
-  );
-
-  let node;
-  let inCodeBlock = false;
-  while (node = walker.nextNode()) {
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const tagName = node.tagName.toLowerCase();
-      if (tagName === 'code' || tagName === 'pre') {
-        inCodeBlock = true;
-        text += '\n```\n';
-      } else if (tagName === 'br' || tagName === 'p' || tagName === 'div') {
-        text += '\n';
-      }
-    } else if (node.nodeType === Node.TEXT_NODE) {
-      const nodeText = node.textContent;
-      if (nodeText.trim()) {
-        text += inCodeBlock ? nodeText : nodeText.trim() + ' ';
-      }
-    }
-    
-    if (inCodeBlock && node.nodeType === Node.ELEMENT_NODE) {
-      const tagName = node.tagName.toLowerCase();
-      if (tagName !== 'code' && tagName !== 'pre') {
-        inCodeBlock = false;
-        text += '\n```\n';
+        return;
       }
     }
   }
-  
-  return text.trim();
-}
 
-// Content hash for efficient change detection
-function hashContent(text) {
-  if (!text) return '0';
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    const char = text.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+  // ============ SEND UPDATES ============
+  function sendUpdate(type, tokens, chars) {
+    log(`${type}: ${chars} chars, ${tokens} tokens`);
+    try {
+      chrome.runtime.sendMessage({
+        type: type,
+        tokens: tokens,
+        chars: chars,
+        platform: window.location.hostname,
+        detectedModel: detectedModel,
+        timestamp: Date.now()
+      }).catch(() => {});
+    } catch (e) {}
   }
-  return hash.toString(36);
-}
 
-// Track processed content with hashes
-const processedContent = new Map();
-const streamingBuffers = new Map();
+  // ============ CHECK INPUT ============
+  function checkInput() {
+    const inputs = findAll(config.input);
+    let text = '';
+    inputs.forEach(el => text += getText(el) + ' ');
+    text = text.trim();
 
-// Process and send token update
-function processTokenUpdate(element, type = 'response', isStreaming = false) {
-  const startTime = performance.now();
-  
-  try {
-    const text = extractTextContent(element);
-    const hash = hashContent(text);
-    
-    // Check if content has changed
-    const elementId = element.id || element.className || 'unknown';
-    const lastHash = processedContent.get(elementId);
-    
-    if (lastHash === hash && !isStreaming) {
-      performanceMetrics.cacheHits++;
-      return; // No change
+    const h = hash(text);
+    if (h !== lastInputHash && text.length > 0) {
+      lastInputHash = h;
+      const tokens = countTokens(text);
+      sendUpdate('inputUpdate', tokens, text.length);
     }
-    
-    performanceMetrics.cacheMisses++;
-    processedContent.set(elementId, hash);
-    
-    // Calculate tokens
-    const platform = window.location.hostname;
-    const tokenDetails = getTokenDetails(text, platform);
-    
-    // Track performance
-    const calculationTime = performance.now() - startTime;
-    performanceMetrics.tokenCalculations++;
-    performanceMetrics.avgCalculationTime = 
-      (performanceMetrics.avgCalculationTime * (performanceMetrics.tokenCalculations - 1) + calculationTime) / 
-      performanceMetrics.tokenCalculations;
-    
-    // Send update to background script
-    chrome.runtime.sendMessage({
-      type: type === 'input' ? 'inputUpdate' : 'responseUpdate',
-      text: text.substring(0, 1000), // Send sample for debugging
-      tokens: tokenDetails.count,
-      chars: text.length,
-      platform: tokenDetails.platform,
-      avgTokenLength: tokenDetails.avgTokenLength,
-      isStreaming: isStreaming,
-      timestamp: Date.now(),
-      metrics: performanceMetrics
-    });
-    
-  } catch (error) {
-    console.error('[AI Token Monitor] Processing error:', error);
   }
-}
 
-// Debounced processors for different update types
-const processInputUpdate = debounce((element) => {
-  processTokenUpdate(element, 'input', false);
-}, 150, { leading: true, trailing: true });
+  // ============ CHECK RESPONSES ============
+  function checkResponses() {
+    const responses = findAll(config.response);
+    let text = '';
+    responses.forEach(el => text += getText(el) + '\n');
+    text = text.trim();
 
-const processResponseUpdate = debounce((element, isStreaming) => {
-  processTokenUpdate(element, 'response', isStreaming);
-}, isStreaming => isStreaming ? 100 : 300, { leading: false, trailing: true });
-
-// Monitor input fields with better event handling
-function monitorInputField(input) {
-  if (!input || input.hasAttribute('data-token-monitor')) return;
-  
-  input.setAttribute('data-token-monitor', 'true');
-  
-  // Create unified handler
-  const handleInputChange = () => processInputUpdate(input);
-  
-  // Monitor different types of input
-  if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
-    input.addEventListener('input', handleInputChange);
-    input.addEventListener('change', handleInputChange);
-  } else if (input.contentEditable === 'true' || input.contentEditable === '') {
-    // ContentEditable elements
-    input.addEventListener('input', handleInputChange);
-    input.addEventListener('DOMCharacterDataModified', handleInputChange);
-    
-    // Monitor keyboard events for better responsiveness
-    input.addEventListener('keyup', debounce(handleInputChange, 500));
+    const h = hash(text);
+    if (h !== lastOutputHash && text.length > 0) {
+      lastOutputHash = h;
+      const tokens = countTokens(text);
+      sendUpdate('responseUpdate', tokens, text.length);
+    }
   }
-  
-  // Handle paste events
-  input.addEventListener('paste', () => {
-    setTimeout(handleInputChange, 50);
-  });
-}
 
-// Detect streaming responses
-function isStreamingResponse(element) {
-  const config = getPlatformConfig();
-  if (!config.features.streamingResponse) return false;
-  
-  // Check for typing indicators
-  const typingIndicators = document.querySelectorAll(config.selectors.typing);
-  if (typingIndicators.length > 0) return true;
-  
-  // Check if element is still being modified
-  const elementId = element.id || element.className || Math.random().toString();
-  const buffer = streamingBuffers.get(elementId) || { lastLength: 0, count: 0 };
-  const currentLength = element.textContent.length;
-  
-  if (currentLength > buffer.lastLength) {
-    buffer.lastLength = currentLength;
-    buffer.count++;
-    streamingBuffers.set(elementId, buffer);
-    return buffer.count > 1; // Consider streaming after multiple updates
+  // ============ STREAMING DETECTION ============
+  function isStreaming() {
+    // Check for streaming indicators
+    const indicators = [
+      '[data-is-streaming="true"]',
+      '.result-streaming',
+      '.streaming',
+      '.loading'
+    ];
+
+    for (const sel of indicators) {
+      if (document.querySelector(sel)) return true;
+    }
+
+    return false;
   }
-  
-  return false;
-}
 
-// Initialize mutation observer with optimizations
-function initializeObserver() {
-  const config = getPlatformConfig();
-  let observer = null;
-  
-  const observerCallback = debounce((mutations) => {
-    const elementsToProcess = new Set();
-    const inputsToCheck = new Set();
-    
-    for (const mutation of mutations) {
-      // Handle added nodes
-      if (mutation.type === 'childList') {
-        mutation.addedNodes.forEach(node => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            // Check for response elements
-            const responses = node.querySelectorAll(config.selectors.response);
-            responses.forEach(r => elementsToProcess.add(r));
-            
-            // Check for input elements
-            const inputs = node.querySelectorAll(config.selectors.input);
-            inputs.forEach(i => inputsToCheck.add(i));
-            
-            // Check if node itself is relevant
-            if (node.matches && node.matches(config.selectors.response)) {
-              elementsToProcess.add(node);
-            }
-            if (node.matches && node.matches(config.selectors.input)) {
-              inputsToCheck.add(node);
-            }
-          }
+  function startStreamingPoll() {
+    if (streamingPoll) return;
+    log('Streaming started');
+
+    streamingPoll = setInterval(() => {
+      checkResponses();
+      if (!isStreaming()) {
+        stopStreamingPoll();
+      }
+    }, 150); // Fast polling during streaming
+  }
+
+  function stopStreamingPoll() {
+    if (!streamingPoll) return;
+    log('Streaming ended');
+
+    clearInterval(streamingPoll);
+    streamingPoll = null;
+    checkResponses(); // Final update
+  }
+
+  // ============ SETUP ============
+  function setupInputListeners() {
+    const inputs = findAll(config.input);
+    inputs.forEach(input => {
+      if (input.dataset.monitored) return;
+      input.dataset.monitored = 'true';
+
+      log('Monitoring input:', input.tagName);
+
+      const handler = () => checkInput();
+      input.addEventListener('input', handler);
+      input.addEventListener('keyup', handler);
+      input.addEventListener('paste', () => setTimeout(handler, 100));
+
+      if (input.contentEditable === 'true') {
+        new MutationObserver(handler).observe(input, {
+          childList: true,
+          subtree: true,
+          characterData: true
         });
       }
-      
-      // Handle character data changes
-      if (mutation.type === 'characterData') {
-        const parent = mutation.target.parentElement;
-        if (parent) {
-          const response = parent.closest(config.selectors.response);
-          if (response) elementsToProcess.add(response);
+    });
+  }
+
+  function setupObserver() {
+    const observer = new MutationObserver((mutations) => {
+      let textChanged = false;
+
+      for (const mutation of mutations) {
+        if (mutation.type === 'characterData') {
+          textChanged = true;
+        }
+        if (mutation.type === 'childList') {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.TEXT_NODE) {
+              textChanged = true;
+            }
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              setupInputListeners();
+            }
+          }
         }
       }
-      
-      // Handle attribute changes (contenteditable, etc.)
-      if (mutation.type === 'attributes' && mutation.target.matches) {
-        if (mutation.target.matches(config.selectors.input)) {
-          inputsToCheck.add(mutation.target);
-        }
+
+      if (textChanged && !streamingPoll) {
+        startStreamingPoll();
       }
-    }
-    
-    // Process collected elements
-    elementsToProcess.forEach(element => {
-      const streaming = isStreamingResponse(element);
-      processResponseUpdate(element, streaming);
     });
-    
-    inputsToCheck.forEach(input => monitorInputField(input));
-  }, 50, { leading: false, trailing: true });
-  
-  function startObserving() {
-    const container = document.querySelector(config.selectors.container);
-    if (!container) {
-      setTimeout(startObserving, 500);
-      return;
-    }
-    
-    // Initial setup
-    document.querySelectorAll(config.selectors.input).forEach(monitorInputField);
-    document.querySelectorAll(config.selectors.response).forEach(element => {
-      processTokenUpdate(element, 'response', false);
-    });
-    
-    // Start observing
-    observer = new MutationObserver(observerCallback);
-    observer.observe(container, {
+
+    observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ['contenteditable', 'value', 'class', 'style']
+      characterData: true
     });
-    
-    console.log('[AI Token Monitor] Observer initialized for', window.location.hostname);
   }
-  
-  // Clean up function
-  function cleanup() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
-    processedContent.clear();
-    streamingBuffers.clear();
-  }
-  
-  // Handle visibility changes to pause/resume monitoring
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      cleanup();
-    } else {
-      startObserving();
-    }
-  });
-  
-  startObserving();
-  
-  return { cleanup, restart: startObserving };
-}
 
-// Performance optimization: Batch updates
-class UpdateBatcher {
-  constructor(flushInterval = 100) {
-    this.queue = [];
-    this.flushInterval = flushInterval;
-    this.timer = null;
-  }
-  
-  add(update) {
-    this.queue.push(update);
-    if (!this.timer) {
-      this.timer = setTimeout(() => this.flush(), this.flushInterval);
-    }
-  }
-  
-  flush() {
-    if (this.queue.length === 0) return;
-    
-    // Combine updates by type
-    const combined = {
-      inputTokens: 0,
-      inputChars: 0,
-      outputTokens: 0,
-      outputChars: 0,
-      updates: []
-    };
-    
-    this.queue.forEach(update => {
-      if (update.type === 'inputUpdate') {
-        combined.inputTokens = update.tokens; // Use latest
-        combined.inputChars = update.chars;
-      } else {
-        combined.outputTokens += update.tokens;
-        combined.outputChars += update.chars;
+  // ============ INIT ============
+  function init() {
+    log('Initializing for:', config.name);
+
+    setupInputListeners();
+    setupObserver();
+
+    // Initial checks
+    checkInput();
+    checkResponses();
+    detectModel();
+
+    // Regular polling
+    setInterval(() => {
+      checkInput();
+      checkResponses();
+      detectModel();
+
+      if (isStreaming() && !streamingPoll) {
+        startStreamingPoll();
       }
-      combined.updates.push(update);
-    });
-    
-    // Send batched update
-    chrome.runtime.sendMessage({
-      type: 'batchUpdate',
-      ...combined,
-      timestamp: Date.now()
-    });
-    
-    this.queue = [];
-    this.timer = null;
+    }, 1000);
+
+    // Notify background
+    try {
+      chrome.runtime.sendMessage({
+        type: 'contentScriptReady',
+        platform: window.location.hostname
+      }).catch(() => {});
+    } catch (e) {}
   }
-}
 
-const updateBatcher = new UpdateBatcher(100);
-
-// Initialize on page load
-let observerControl = null;
-
-function initialize() {
-  console.log('[AI Token Monitor] Initializing for', window.location.hostname);
-  
-  // Clear any existing observers
-  if (observerControl) {
-    observerControl.cleanup();
-  }
-  
-  // Start monitoring
-  observerControl = initializeObserver();
-  
-  // Send initial status
-  chrome.runtime.sendMessage({
-    type: 'contentScriptReady',
-    platform: window.location.hostname,
-    timestamp: Date.now()
-  });
-}
-
-// Handle page navigation (for SPAs)
-let lastUrl = location.href;
-const navigationObserver = new MutationObserver(() => {
-  const currentUrl = location.href;
-  if (currentUrl !== lastUrl) {
-    lastUrl = currentUrl;
-    console.log('[AI Token Monitor] Navigation detected, reinitializing');
-    setTimeout(initialize, 500); // Wait for new content to load
-  }
-});
-
-navigationObserver.observe(document, { subtree: true, childList: true });
-
-// Listen for messages from popup/background
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  switch (request.type) {
-    case 'getStatus':
+  // ============ MESSAGE HANDLER ============
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'forceUpdate') {
+      checkInput();
+      checkResponses();
+      sendResponse({ success: true });
+    } else if (request.type === 'getStatus') {
       sendResponse({
         active: true,
         platform: window.location.hostname,
-        metrics: performanceMetrics,
-        cached: processedContent.size
+        model: detectedModel
       });
-      break;
-      
-    case 'clearCache':
-      processedContent.clear();
-      streamingBuffers.clear();
-      tokenCache.clear();
-      sendResponse({ success: true });
-      break;
-      
-    case 'forceUpdate':
-      const config = getPlatformConfig();
-      document.querySelectorAll(config.selectors.response).forEach(element => {
-        processTokenUpdate(element, 'response', false);
-      });
-      sendResponse({ success: true });
-      break;
+    }
+    return true;
+  });
+
+  // ============ START ============
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(init, 300));
+  } else {
+    setTimeout(init, 300);
   }
-  return true;
-});
 
-// Initialize when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initialize);
-} else {
-  initialize();
-}
+  // Handle SPA navigation
+  let lastUrl = location.href;
+  new MutationObserver(() => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      log('URL changed');
+      lastInputHash = '';
+      lastOutputHash = '';
+      setTimeout(init, 500);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 
-// Export for testing
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    extractTextContent,
-    hashContent,
-    processTokenUpdate,
-    getPlatformConfig
-  };
-}
+})();

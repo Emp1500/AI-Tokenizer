@@ -5,17 +5,59 @@
   <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
   <style>
     body {
-      width: 300px;
+      width: 320px;
       height: auto;
       margin: 0;
       padding: 16px;
-      background-color: #000000;
+      background-color: #0a0a0a;
       color: #FFFFFF;
       font-family: 'VT323', monospace;
       display: flex;
       flex-direction: column;
       align-items: stretch;
       gap: 12px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #333;
+    }
+
+    .platform-name {
+      font-size: 18px;
+      color: #4CAF50;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .model-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .model-selector label {
+      font-size: 12px;
+      color: #888;
+      text-transform: uppercase;
+    }
+
+    #modelSelect {
+      background: #1a1a1a;
+      color: #FF4545;
+      border: 1px solid #333;
+      padding: 4px 8px;
+      font-family: 'VT323', monospace;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+
+    #modelSelect:hover {
+      border-color: #FF4545;
     }
 
     .stats {
@@ -29,12 +71,14 @@
     .count {
       color: #FF4545;
       margin-left: 5px;
+      font-weight: bold;
     }
 
     .cost {
-      font-size: 24px;
+      font-size: 28px;
       color: #FF4545;
       margin-top: 5px;
+      font-weight: bold;
     }
 
     .token-display {
@@ -57,18 +101,18 @@
     }
 
     .divider {
-      width: 80%;
+      width: 100%;
       height: 1px;
-      background-color: #FF4545;
-      opacity: 0.3;
-      margin: 5px 0;
+      background: linear-gradient(90deg, transparent, #FF4545, transparent);
+      opacity: 0.5;
+      margin: 8px 0;
     }
 
     #resetButton {
       background: transparent;
       color: #FF4545;
       border: 2px solid #FF4545;
-      padding: 8px 24px;
+      padding: 10px 24px;
       font-family: 'VT323', monospace;
       font-size: 18px;
       cursor: pointer;
@@ -76,6 +120,7 @@
       text-transform: uppercase;
       letter-spacing: 2px;
       margin-top: 10px;
+      border-radius: 2px;
     }
 
     #resetButton:hover {
@@ -86,30 +131,100 @@
     .highlight {
       color: #FF4545;
     }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .stat-label {
+      color: #888;
+    }
+
+    .streaming-indicator {
+      display: none;
+      width: 8px;
+      height: 8px;
+      background-color: #4CAF50;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+      margin-left: 8px;
+    }
+
+    .streaming-indicator.active {
+      display: inline-block;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .footer {
+      font-size: 11px;
+      color: #555;
+      text-align: center;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
+  <div class="header">
+    <span id="platformDisplay" class="platform-name">--</span>
+    <div class="model-selector">
+      <label>Model:</label>
+      <select id="modelSelect"></select>
+    </div>
+  </div>
+
   <div class="token-display">
     <div class="label">Input</div>
     <div class="stats">
-      <div>Characters: <span id="inputChars" class="count">0</span></div>
-      <div>Tokens: <span id="inputTokens" class="count">0</span></div>
+      <div class="row">
+        <span class="stat-label">Characters:</span>
+        <span id="inputChars" class="count">0</span>
+      </div>
+      <div class="row">
+        <span class="stat-label">Tokens:</span>
+        <span id="inputTokens" class="count">0</span>
+      </div>
     </div>
   </div>
+
   <div class="divider"></div>
+
   <div class="token-display">
-    <div class="label">Output</div>
+    <div class="label">
+      Output
+      <span id="streamingIndicator" class="streaming-indicator"></span>
+    </div>
     <div class="stats">
-      <div>Characters: <span id="outputChars" class="count">0</span></div>
-      <div>Tokens: <span id="outputTokens" class="count">0</span></div>
+      <div class="row">
+        <span class="stat-label">Characters:</span>
+        <span id="outputChars" class="count">0</span>
+      </div>
+      <div class="row">
+        <span class="stat-label">Tokens:</span>
+        <span id="outputTokens" class="count">0</span>
+      </div>
     </div>
   </div>
+
   <div class="divider"></div>
+
   <div class="token-display">
     <div class="label">Estimated Cost</div>
-    <div id="costDisplay" class="cost highlight">$0.00</div>
+    <div id="costDisplay" class="cost highlight">$0.0000</div>
   </div>
-  <button id="resetButton">Reset</button>
+
+  <button id="resetButton">Reset Session</button>
+
+  <div class="footer">
+    Token counts are estimates
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

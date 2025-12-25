@@ -1,17 +1,19 @@
 {
   "manifest_version": 3,
   "name": "AI Token Monitor",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Live token counter and cost estimator for AI chat interfaces",
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
     "tabs",
-    "webNavigation"
+    "webNavigation",
+    "notifications"
   ],
   "host_permissions": [
     "*://chat.openai.com/*",
+    "*://chatgpt.com/*",
     "*://claude.ai/*",
     "*://gemini.google.com/*",
     "*://bard.google.com/*"
@@ -25,19 +27,19 @@
     }
   },
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": [
         "*://chat.openai.com/*",
+        "*://chatgpt.com/*",
         "*://claude.ai/*",
         "*://gemini.google.com/*",
         "*://bard.google.com/*"
       ],
       "js": ["tokenizer.js", "content.js"],
-      "run_at": "document_start",
+      "run_at": "document_idle",
       "all_frames": true
     }
   ],

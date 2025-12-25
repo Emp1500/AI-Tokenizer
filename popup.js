@@ -1,99 +1,134 @@
-// Debug logging
-const DEBUG = true;
-function log(message, data) {
-  if (DEBUG) {
-    console.log(`[AI Token Monitor] ${message}`, data || '');
-  }
-}
+// AI Token Monitor - Popup
+(function() {
+  'use strict';
 
-// Wait for the DOM to be fully loaded
-document.addEventListener('DOMContentLoaded', () => {
-  log('Popup opened');
-  
-  // Get all display elements
-  const inputChars = document.getElementById('inputChars');
-  const inputTokens = document.getElementById('inputTokens');
-  const outputChars = document.getElementById('outputChars');
-  const outputTokens = document.getElementById('outputTokens');
-  const costDisplay = document.getElementById('costDisplay');
-  const resetButton = document.getElementById('resetButton');
-  
-  // Function to format numbers with animation
-  function animateValue(element, start, end, duration = 500) {
-    if (!element) return;
-    
-    const range = end - start;
-    const startTime = performance.now();
-    
-    function update(currentTime) {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      const value = Math.floor(start + (range * progress));
-      element.textContent = value.toLocaleString();
-      
-      if (progress < 1) {
-        requestAnimationFrame(update);
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('[AI Token Monitor] Popup opened');
+
+    const elements = {
+      inputChars: document.getElementById('inputChars'),
+      inputTokens: document.getElementById('inputTokens'),
+      outputChars: document.getElementById('outputChars'),
+      outputTokens: document.getElementById('outputTokens'),
+      costDisplay: document.getElementById('costDisplay'),
+      resetButton: document.getElementById('resetButton'),
+      modelSelect: document.getElementById('modelSelect'),
+      platformDisplay: document.getElementById('platformDisplay'),
+      streamingIndicator: document.getElementById('streamingIndicator')
+    };
+
+    let pollInterval = null;
+    let currentModels = {};
+
+    // Update display
+    function updateStats(stats) {
+      if (!stats) return;
+
+      if (elements.inputChars) {
+        elements.inputChars.textContent = (stats.inputChars || 0).toLocaleString();
+      }
+      if (elements.inputTokens) {
+        elements.inputTokens.textContent = (stats.inputTokens || 0).toLocaleString();
+      }
+      if (elements.outputChars) {
+        elements.outputChars.textContent = (stats.outputChars || 0).toLocaleString();
+      }
+      if (elements.outputTokens) {
+        elements.outputTokens.textContent = (stats.outputTokens || 0).toLocaleString();
+      }
+      if (elements.costDisplay) {
+        const cost = stats.cost || 0;
+        elements.costDisplay.textContent = `$${cost.toFixed(6)}`;
+      }
+      if (elements.platformDisplay && stats.platform) {
+        const names = {
+          'chatgpt.com': 'ChatGPT',
+          'chat.openai.com': 'ChatGPT',
+          'claude.ai': 'Claude',
+          'gemini.google.com': 'Gemini'
+        };
+        elements.platformDisplay.textContent = names[stats.platform] || stats.platform;
+      }
+      if (elements.modelSelect && stats.model) {
+        elements.modelSelect.value = stats.model;
       }
     }
-    
-    requestAnimationFrame(update);
-  }
 
-  // Function to update individual display elements with animation
-  function updateDisplay(element, value, isNumber = true) {
-    if (element && value !== undefined) {
-      if (isNumber) {
-        const currentValue = parseInt(element.textContent.replace(/,/g, '')) || 0;
-        animateValue(element, currentValue, value);
-      } else {
-        element.textContent = value;
+    // Load models
+    function loadModels() {
+      chrome.runtime.sendMessage({ type: 'getModels' }, (response) => {
+        if (chrome.runtime.lastError || !response?.models) return;
+
+        currentModels = response.models;
+        if (!elements.modelSelect) return;
+
+        elements.modelSelect.innerHTML = '';
+        Object.entries(response.models).forEach(([key, value]) => {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = value.displayName || key;
+          elements.modelSelect.appendChild(option);
+        });
+      });
+    }
+
+    // Request stats
+    function requestStats() {
+      chrome.runtime.sendMessage({ type: 'getStats' }, (response) => {
+        if (chrome.runtime.lastError) return;
+        updateStats(response);
+      });
+
+      // Force content script update
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, { type: 'forceUpdate' }).catch(() => {});
+        }
+      });
+    }
+
+    // Model change handler
+    if (elements.modelSelect) {
+      elements.modelSelect.addEventListener('change', () => {
+        chrome.runtime.sendMessage({
+          type: 'switchModel',
+          model: elements.modelSelect.value
+        }, () => requestStats());
+      });
+    }
+
+    // Reset handler
+    if (elements.resetButton) {
+      elements.resetButton.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ type: 'reset' }, () => {
+          updateStats({
+            inputChars: 0,
+            inputTokens: 0,
+            outputChars: 0,
+            outputTokens: 0,
+            cost: 0
+          });
+        });
+      });
+    }
+
+    // Listen for updates
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.type === 'statsUpdate') {
+        updateStats(message);
       }
-    }
-  }
-
-  // Function to update all stats
-  function updateStats(stats) {
-    updateDisplay(inputChars, stats.inputChars);
-    updateDisplay(inputTokens, stats.inputTokens);
-    updateDisplay(outputChars, stats.outputChars);
-    updateDisplay(outputTokens, stats.outputTokens);
-    if (stats.cost !== undefined) {
-      updateDisplay(costDisplay, `$${stats.cost.toFixed(4)}`, false);
-    }
-  }
-
-  // Reset all displays to zero
-  function resetDisplays() {
-    updateStats({
-      inputChars: 0,
-      inputTokens: 0,
-      outputChars: 0,
-      outputTokens: 0,
-      cost: 0
     });
-  }
 
-  // Request initial stats from background script
-  chrome.runtime.sendMessage({ type: 'getStats' }, response => {
-    if (response) {
-      updateStats(response);
-    }
-  });
+    // Initial load
+    loadModels();
+    requestStats();
 
-  // Listen for stats updates from background script
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'statsUpdate') {
-      updateStats(message);
-    }
-  });
+    // Poll for updates
+    pollInterval = setInterval(requestStats, 500);
 
-  // Handle reset button click
-  resetButton.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'reset' }, response => {
-      if (response && response.success) {
-        resetDisplays();
-      }
+    // Cleanup
+    window.addEventListener('unload', () => {
+      if (pollInterval) clearInterval(pollInterval);
     });
   });
-});
+})();

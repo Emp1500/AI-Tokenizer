@@ -1,39 +1,49 @@
-// Enhanced background.js with improved state management and cost tracking
+// AI Token Monitor - Background Service Worker
+// Updated December 2024
 
-// Updated API pricing (as of 2024)
+// Latest API pricing (per 1K tokens) - December 2024
 const API_PRICING = {
+  'chatgpt.com': {
+    models: {
+      'gpt-4o': { input: 0.0025, output: 0.01, displayName: 'GPT-4o' },
+      'gpt-4o-mini': { input: 0.00015, output: 0.0006, displayName: 'GPT-4o Mini' },
+      'o1-preview': { input: 0.015, output: 0.06, displayName: 'o1-preview' },
+      'o1-mini': { input: 0.003, output: 0.012, displayName: 'o1-mini' },
+      'gpt-4-turbo': { input: 0.01, output: 0.03, displayName: 'GPT-4 Turbo' },
+      'gpt-4': { input: 0.03, output: 0.06, displayName: 'GPT-4' },
+      'gpt-3.5-turbo': { input: 0.0005, output: 0.0015, displayName: 'GPT-3.5 Turbo' }
+    },
+    default: 'gpt-4o'
+  },
   'chat.openai.com': {
     models: {
-      'gpt-4-turbo': { input: 0.01, output: 0.03 },
-      'gpt-4': { input: 0.03, output: 0.06 },
-      'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
-      'gpt-3.5-turbo-16k': { input: 0.003, output: 0.004 }
+      'gpt-4o': { input: 0.0025, output: 0.01, displayName: 'GPT-4o' },
+      'gpt-4o-mini': { input: 0.00015, output: 0.0006, displayName: 'GPT-4o Mini' },
+      'o1-preview': { input: 0.015, output: 0.06, displayName: 'o1-preview' },
+      'o1-mini': { input: 0.003, output: 0.012, displayName: 'o1-mini' },
+      'gpt-4-turbo': { input: 0.01, output: 0.03, displayName: 'GPT-4 Turbo' },
+      'gpt-4': { input: 0.03, output: 0.06, displayName: 'GPT-4' }
     },
-    default: 'gpt-3.5-turbo'
+    default: 'gpt-4o'
   },
   'claude.ai': {
     models: {
-      'claude-3-opus': { input: 0.015, output: 0.075 },
-      'claude-3-sonnet': { input: 0.003, output: 0.015 },
-      'claude-3-haiku': { input: 0.00025, output: 0.00125 },
-      'claude-2.1': { input: 0.008, output: 0.024 },
-      'claude-instant': { input: 0.0008, output: 0.0024 }
+      'claude-3.5-sonnet': { input: 0.003, output: 0.015, displayName: 'Claude 3.5 Sonnet' },
+      'claude-3.5-haiku': { input: 0.0008, output: 0.004, displayName: 'Claude 3.5 Haiku' },
+      'claude-3-opus': { input: 0.015, output: 0.075, displayName: 'Claude 3 Opus' },
+      'claude-3-sonnet': { input: 0.003, output: 0.015, displayName: 'Claude 3 Sonnet' },
+      'claude-3-haiku': { input: 0.00025, output: 0.00125, displayName: 'Claude 3 Haiku' }
     },
-    default: 'claude-3-sonnet'
+    default: 'claude-3.5-sonnet'
   },
   'gemini.google.com': {
     models: {
-      'gemini-pro': { input: 0.00025, output: 0.0005 },
-      'gemini-pro-vision': { input: 0.00025, output: 0.0005 },
-      'gemini-ultra': { input: 0.007, output: 0.021 }
+      'gemini-2.0-flash': { input: 0.0001, output: 0.0004, displayName: 'Gemini 2.0 Flash' },
+      'gemini-1.5-pro': { input: 0.00125, output: 0.005, displayName: 'Gemini 1.5 Pro' },
+      'gemini-1.5-flash': { input: 0.000075, output: 0.0003, displayName: 'Gemini 1.5 Flash' },
+      'gemini-1.0-pro': { input: 0.0005, output: 0.0015, displayName: 'Gemini 1.0 Pro' }
     },
-    default: 'gemini-pro'
-  },
-  'bard.google.com': {
-    models: {
-      'gemini-pro': { input: 0.00025, output: 0.0005 }
-    },
-    default: 'gemini-pro'
+    default: 'gemini-2.0-flash'
   }
 };
 
@@ -47,29 +57,24 @@ class SessionState {
       inputChars: 0,
       outputChars: 0,
       totalCost: 0,
-      sessionCount: 0,
-      messageCount: 0
+      sessionCount: 0
     };
-    this.currentSessionId = null;
     this.settings = {
       selectedModel: {},
-      trackingEnabled: true,
-      showNotifications: false,
-      costAlerts: {
-        enabled: false,
-        threshold: 1.0
-      }
+      trackingEnabled: true
     };
     this.loadState();
   }
 
   createSession(tabId, platform) {
     const sessionId = `${tabId}_${Date.now()}`;
+    const defaultModel = API_PRICING[platform]?.default || 'gpt-4o';
+
     const session = {
       id: sessionId,
       tabId: tabId,
       platform: platform,
-      model: this.settings.selectedModel[platform] || API_PRICING[platform]?.default,
+      model: this.settings.selectedModel[platform] || defaultModel,
       startTime: Date.now(),
       lastActivity: Date.now(),
       stats: {
@@ -77,24 +82,20 @@ class SessionState {
         outputTokens: 0,
         inputChars: 0,
         outputChars: 0,
-        cost: 0,
-        messages: 0
+        cost: 0
       },
-      history: []
+      detectedModel: null
     };
-    
+
     this.sessions.set(sessionId, session);
-    this.currentSessionId = sessionId;
     this.totalStats.sessionCount++;
-    this.saveState();
-    
+    console.log('[AI Token Monitor] Created session:', sessionId, 'platform:', platform);
     return session;
   }
 
   getSession(tabId) {
     for (const [id, session] of this.sessions) {
       if (session.tabId === tabId) {
-        this.currentSessionId = id;
         return session;
       }
     }
@@ -104,83 +105,54 @@ class SessionState {
   updateSession(sessionId, update) {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
-    
-    const pricing = API_PRICING[session.platform]?.models[session.model];
-    if (!pricing) return null;
-    
-    // Update session stats
+
+    // Get pricing for current model
+    const platformPricing = API_PRICING[session.platform];
+    const modelPricing = platformPricing?.models[session.model] ||
+                         platformPricing?.models[platformPricing?.default] ||
+                         { input: 0.003, output: 0.015 };
+
+    // Update stats
     if (update.type === 'inputUpdate') {
-      session.stats.inputTokens = update.tokens;
-      session.stats.inputChars = update.chars;
-    } else if (update.type === 'responseUpdate' || update.type === 'outputUpdate') {
-      session.stats.outputTokens += update.tokens;
-      session.stats.outputChars += update.chars;
-      session.stats.messages++;
+      session.stats.inputTokens = update.tokens || 0;
+      session.stats.inputChars = update.chars || 0;
+    } else if (update.type === 'responseUpdate') {
+      session.stats.outputTokens = update.tokens || 0;
+      session.stats.outputChars = update.chars || 0;
     }
-    
+
+    // Update detected model if provided
+    if (update.detectedModel) {
+      session.detectedModel = update.detectedModel;
+      // Auto-switch to detected model if it exists in our pricing
+      if (platformPricing?.models[update.detectedModel]) {
+        session.model = update.detectedModel;
+      }
+    }
+
     // Calculate cost
-    const inputCost = (session.stats.inputTokens / 1000) * pricing.input;
-    const outputCost = (session.stats.outputTokens / 1000) * pricing.output;
+    const inputCost = (session.stats.inputTokens / 1000) * modelPricing.input;
+    const outputCost = (session.stats.outputTokens / 1000) * modelPricing.output;
     session.stats.cost = inputCost + outputCost;
-    
-    // Update activity time
+
     session.lastActivity = Date.now();
-    
-    // Add to history
-    session.history.push({
-      timestamp: Date.now(),
-      type: update.type,
-      tokens: update.tokens,
-      chars: update.chars
-    });
-    
-    // Keep history size manageable
-    if (session.history.length > 100) {
-      session.history = session.history.slice(-50);
-    }
-    
-    // Update total stats
     this.updateTotalStats();
-    
-    // Check cost alerts
-    if (this.settings.costAlerts.enabled && session.stats.cost > this.settings.costAlerts.threshold) {
-      this.sendCostAlert(session);
-    }
-    
-    this.saveState();
+
     return session;
   }
 
   updateTotalStats() {
-    const totals = {
-      inputTokens: 0,
-      outputTokens: 0,
-      inputChars: 0,
-      outputChars: 0,
-      totalCost: 0,
-      messageCount: 0
-    };
-    
+    let totals = { inputTokens: 0, outputTokens: 0, inputChars: 0, outputChars: 0, totalCost: 0 };
+
     for (const session of this.sessions.values()) {
       totals.inputTokens += session.stats.inputTokens;
       totals.outputTokens += session.stats.outputTokens;
       totals.inputChars += session.stats.inputChars;
       totals.outputChars += session.stats.outputChars;
       totals.totalCost += session.stats.cost;
-      totals.messageCount += session.stats.messages;
     }
-    
-    this.totalStats = { ...this.totalStats, ...totals };
-  }
 
-  clearOldSessions() {
-    const oneHourAgo = Date.now() - (60 * 60 * 1000);
-    for (const [id, session] of this.sessions) {
-      if (session.lastActivity < oneHourAgo) {
-        this.sessions.delete(id);
-      }
-    }
-    this.saveState();
+    this.totalStats = { ...this.totalStats, ...totals };
   }
 
   resetStats() {
@@ -191,299 +163,216 @@ class SessionState {
       inputChars: 0,
       outputChars: 0,
       totalCost: 0,
-      sessionCount: 0,
-      messageCount: 0
+      sessionCount: 0
     };
     this.saveState();
   }
 
-  sendCostAlert(session) {
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icons/icon128.png',
-      title: 'AI Token Monitor - Cost Alert',
-      message: `Session cost has exceeded $${this.settings.costAlerts.threshold.toFixed(2)}. Current: $${session.stats.cost.toFixed(4)}`
-    });
-  }
-
   async loadState() {
     try {
-      const stored = await chrome.storage.local.get(['sessions', 'totalStats', 'settings']);
-      if (stored.sessions) {
-        // Restore sessions from storage
-        const sessionData = JSON.parse(stored.sessions);
-        this.sessions = new Map(sessionData);
-      }
-      if (stored.totalStats) {
-        this.totalStats = stored.totalStats;
-      }
+      const stored = await chrome.storage.local.get(['settings']);
       if (stored.settings) {
         this.settings = { ...this.settings, ...stored.settings };
       }
-    } catch (error) {
-      console.error('[AI Token Monitor] Failed to load state:', error);
+    } catch (e) {
+      console.error('[AI Token Monitor] Load error:', e);
     }
   }
 
   async saveState() {
     try {
-      const sessionData = Array.from(this.sessions.entries());
       await chrome.storage.local.set({
-        sessions: JSON.stringify(sessionData),
-        totalStats: this.totalStats,
         settings: this.settings,
         lastSaved: Date.now()
       });
-    } catch (error) {
-      console.error('[AI Token Monitor] Failed to save state:', error);
+    } catch (e) {
+      console.error('[AI Token Monitor] Save error:', e);
     }
-  }
-
-  exportData() {
-    return {
-      sessions: Array.from(this.sessions.values()),
-      totalStats: this.totalStats,
-      settings: this.settings,
-      exported: new Date().toISOString()
-    };
   }
 }
 
 // Initialize state
 const state = new SessionState();
 
-// Clean up old sessions periodically
-setInterval(() => {
-  state.clearOldSessions();
-}, 15 * 60 * 1000); // Every 15 minutes
+// Get active tab
+async function getActiveTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab || null;
+  } catch (e) {
+    return null;
+  }
+}
 
-// Message handlers
+// Message handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('[AI Token Monitor] Message received:', message.type);
-  
+  console.log('[AI Token Monitor] Message:', message.type);
+
+  const handleAsync = async (handler) => {
+    let tab = sender.tab;
+    if (!tab) {
+      tab = await getActiveTab();
+    }
+    handler(tab);
+  };
+
   switch (message.type) {
     case 'contentScriptReady':
-      handleContentScriptReady(sender.tab, message);
+      if (sender.tab) {
+        let session = state.getSession(sender.tab.id);
+        if (!session) {
+          const platform = message.platform || new URL(sender.tab.url).hostname;
+          session = state.createSession(sender.tab.id, platform);
+        }
+      }
+      sendResponse({ success: true });
       break;
-      
+
     case 'inputUpdate':
     case 'responseUpdate':
-    case 'outputUpdate':
-      handleTokenUpdate(sender.tab, message);
+      if (sender.tab) {
+        let session = state.getSession(sender.tab.id);
+        if (!session) {
+          try {
+            const platform = new URL(sender.tab.url).hostname;
+            session = state.createSession(sender.tab.id, platform);
+          } catch (e) {
+            sendResponse({ success: false });
+            break;
+          }
+        }
+
+        session = state.updateSession(session.id, message);
+
+        // Broadcast to popup
+        chrome.runtime.sendMessage({
+          type: 'statsUpdate',
+          inputTokens: session.stats.inputTokens,
+          inputChars: session.stats.inputChars,
+          outputTokens: session.stats.outputTokens,
+          outputChars: session.stats.outputChars,
+          cost: session.stats.cost,
+          model: session.model,
+          platform: session.platform
+        }).catch(() => {});
+      }
+      sendResponse({ success: true });
       break;
-      
-    case 'batchUpdate':
-      handleBatchUpdate(sender.tab, message);
-      break;
-      
+
     case 'getStats':
-      handleGetStats(sender.tab, sendResponse);
-      break;
-      
-    case 'getSessionDetails':
-      handleGetSessionDetails(sender.tab, sendResponse);
-      break;
-      
-    case 'reset':
-      handleReset(sendResponse);
-      break;
-      
-    case 'updateSettings':
-      handleUpdateSettings(message.settings, sendResponse);
-      break;
-      
-    case 'exportData':
-      handleExportData(sendResponse);
-      break;
-      
+      handleAsync((tab) => {
+        const session = tab ? state.getSession(tab.id) : null;
+        if (session) {
+          sendResponse({
+            inputTokens: session.stats.inputTokens,
+            inputChars: session.stats.inputChars,
+            outputTokens: session.stats.outputTokens,
+            outputChars: session.stats.outputChars,
+            cost: session.stats.cost,
+            model: session.model,
+            platform: session.platform
+          });
+        } else {
+          sendResponse({
+            inputTokens: 0,
+            inputChars: 0,
+            outputTokens: 0,
+            outputChars: 0,
+            cost: 0
+          });
+        }
+      });
+      return true;
+
     case 'getModels':
-      handleGetModels(sender.tab, sendResponse);
-      break;
+      handleAsync((tab) => {
+        if (tab) {
+          try {
+            const platform = new URL(tab.url).hostname;
+            const platformModels = API_PRICING[platform]?.models || {};
+            sendResponse({ models: platformModels, platform: platform });
+          } catch (e) {
+            sendResponse({ models: {} });
+          }
+        } else {
+          sendResponse({ models: {} });
+        }
+      });
+      return true;
 
     case 'switchModel':
-      handleSwitchModel(sender.tab, message, sendResponse);
+      handleAsync((tab) => {
+        if (tab) {
+          const session = state.getSession(tab.id);
+          if (session) {
+            session.model = message.model;
+            state.settings.selectedModel[session.platform] = message.model;
+            state.saveState();
+
+            // Recalculate cost with new model
+            state.updateSession(session.id, { type: 'recalculate' });
+
+            sendResponse({ success: true, model: message.model });
+          } else {
+            sendResponse({ success: false });
+          }
+        } else {
+          sendResponse({ success: false });
+        }
+      });
+      return true;
+
+    case 'reset':
+      state.resetStats();
+      sendResponse({ success: true });
       break;
+
+    case 'modelDetected':
+      if (sender.tab) {
+        const session = state.getSession(sender.tab.id);
+        if (session && message.model) {
+          session.detectedModel = message.model;
+          // Try to match to our known models
+          const platform = session.platform;
+          const models = API_PRICING[platform]?.models || {};
+          const modelLower = message.model.toLowerCase();
+
+          for (const [key, value] of Object.entries(models)) {
+            if (modelLower.includes(key.replace(/-/g, ' ')) ||
+                modelLower.includes(key) ||
+                value.displayName.toLowerCase().includes(modelLower)) {
+              session.model = key;
+              break;
+            }
+          }
+        }
+      }
+      sendResponse({ success: true });
+      break;
+
+    default:
+      sendResponse({ success: true });
   }
-  
-  return true; // Keep message channel open for async responses
+
+  return true;
 });
 
-// Handler functions
-function handleGetModels(tab, sendResponse) {
-  if (!tab) {
-    sendResponse({ models: {} });
-    return;
+// Clean up old sessions periodically
+setInterval(() => {
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  for (const [id, session] of state.sessions) {
+    if (session.lastActivity < oneHourAgo) {
+      state.sessions.delete(id);
+    }
   }
-  const session = state.getSession(tab.id);
-  if (session && API_PRICING[session.platform]) {
-    sendResponse({ models: API_PRICING[session.platform].models });
-  } else {
-    sendResponse({ models: {} });
-  }
-}
-function handleContentScriptReady(tab, message) {
-  if (!tab) return;
-  
-  const platform = message.platform || new URL(tab.url).hostname;
-  let session = state.getSession(tab.id);
-  
-  if (!session) {
-    session = state.createSession(tab.id, platform);
-  }
-  
-  // Send current session stats to content script
-  chrome.tabs.sendMessage(tab.id, {
-    type: 'sessionUpdate',
-    session: session
-  });
-}
+}, 15 * 60 * 1000);
 
-function handleTokenUpdate(tab, message) {
-  if (!tab) return;
-  
-  let session = state.getSession(tab.id);
-  if (!session) {
-    const platform = new URL(tab.url).hostname;
-    session = state.createSession(tab.id, platform);
-  }
-  
-  session = state.updateSession(session.id, message);
-  
-  // Broadcast update to popup if open
-  chrome.runtime.sendMessage({
-    type: 'statsUpdate',
-    inputTokens: session.stats.inputTokens,
-    inputChars: session.stats.inputChars,
-    outputTokens: session.stats.outputTokens,
-    outputChars: session.stats.outputChars,
-    cost: session.stats.cost,
-    model: session.model,
-    platform: session.platform
-  }).catch(() => {
-    // Popup not open, ignore
-  });
-}
-
-function handleBatchUpdate(tab, message) {
-  if (!tab) return;
-  
-  let session = state.getSession(tab.id);
-  if (!session) {
-    const platform = new URL(tab.url).hostname;
-    session = state.createSession(tab.id, platform);
-  }
-  
-  // Process batched updates
-  if (message.inputTokens > 0) {
-    state.updateSession(session.id, {
-      type: 'inputUpdate',
-      tokens: message.inputTokens,
-      chars: message.inputChars
-    });
-  }
-  
-  if (message.outputTokens > 0) {
-    state.updateSession(session.id, {
-      type: 'outputUpdate',
-      tokens: message.outputTokens,
-      chars: message.outputChars
-    });
-  }
-}
-
-function handleGetStats(tab, sendResponse) {
-  const session = tab ? state.getSession(tab.id) : null;
-  
-  if (session) {
-    sendResponse({
-      ...session.stats,
-      model: session.model,
-      platform: session.platform,
-      duration: Date.now() - session.startTime
-    });
-  } else {
-    sendResponse({
-      inputTokens: 0,
-      inputChars: 0,
-      outputTokens: 0,
-      outputChars: 0,
-      cost: 0,
-      messages: 0
-    });
-  }
-}
-
-function handleGetSessionDetails(tab, sendResponse) {
-  const sessions = Array.from(state.sessions.values());
-  const currentSession = tab ? state.getSession(tab.id) : null;
-  
-  sendResponse({
-    current: currentSession,
-    all: sessions,
-    totals: state.totalStats
-  });
-}
-
-function handleReset(sendResponse) {
-  state.resetStats();
-  sendResponse({ success: true });
-}
-
-function handleUpdateSettings(newSettings, sendResponse) {
-  state.settings = { ...state.settings, ...newSettings };
-  state.saveState();
-  sendResponse({ success: true, settings: state.settings });
-}
-
-function handleExportData(sendResponse) {
-  const exportData = state.exportData();
-  sendResponse(exportData);
-}
-
-function handleSwitchModel(tab, message, sendResponse) {
-  if (!tab) {
-    sendResponse({ success: false, error: 'No tab information' });
-    return;
-  }
-  
-  const session = state.getSession(tab.id);
-  if (session) {
-    session.model = message.model;
-    state.settings.selectedModel[session.platform] = message.model;
-    state.saveState();
-    sendResponse({ success: true, model: message.model });
-  } else {
-    sendResponse({ success: false, error: 'No active session' });
-  }
-}
-
-// Handle tab close to clean up sessions
+// Handle tab close
 chrome.tabs.onRemoved.addListener((tabId) => {
   const session = state.getSession(tabId);
   if (session) {
-    // Save final stats before removing
-    state.saveState();
-    // Optional: keep session for historical data
-    // state.sessions.delete(session.id);
+    state.sessions.delete(session.id);
   }
 });
 
-// Initialize on install/update
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') {
-    console.log('[AI Token Monitor] Extension installed');
-    chrome.storage.local.clear(); // Start fresh
-  } else if (details.reason === 'update') {
-    console.log('[AI Token Monitor] Extension updated');
-    state.loadState(); // Reload saved state
-  }
-});
-
-// Export for testing
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    SessionState,
-    API_PRICING,
-    state
-  };
-}
+console.log('[AI Token Monitor] Background script loaded');
